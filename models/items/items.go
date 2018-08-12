@@ -2,6 +2,7 @@ package items
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"time"
 
@@ -13,34 +14,51 @@ import (
 
 var db *sql.DB
 
+const (
+	host     = "localhost"
+	port     = 5432
+	user     = "help"
+	password = "help"
+	dbname   = "help.ng"
+)
+
 func init() {
 	var err error
 
-	db, err = sql.Open("postgres", "user=help.ng passowrd=this is the password for help.ng sslmode=disable")
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+"password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+	db, err = sql.Open("postgres", psqlInfo)
+
 	if err != nil {
 		log.Println(err)
 	}
+	err = db.Ping()
+
+	if err != nil {
+		log.Println(err)
+	}
+
+	log.Println("connected to database")
 }
 
 //Item data structure
 type Item struct {
-	ID          string
-	Name        string
-	UserID      string
-	UserName    string
-	UserEmail   string
-	PhoneNo     int
-	Location    locations.Location
-	Closed      bool
-	Instruction string
-	Comments    []comments.Comment
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	UserID      string             `json:"user_id"`
+	DisplayName string             `json:"display_name"`
+	UserEmail   string             `json:"user_email"`
+	PhoneNo     string             `json:"phone_no"`
+	Location    locations.Location `json:"location"`
+	Closed      bool               `json:"closed"`
+	Instruction string             `json:"instruction"`
+	Comments    []comments.Comment `json:"comments,omitempty"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at,omitempty"`
 }
 
 //Validate item struct
 func (item *Item) Validate() map[string]string {
-	var errors map[string]string
+	var errors = make(map[string]string)
 
 	if len(item.Name) <= 2 {
 		message := "item name must be at least three words"
@@ -52,9 +70,9 @@ func (item *Item) Validate() map[string]string {
 		errors["Invalid UserID"] = message
 	}
 
-	if !validator.IsUUID(item.Location.LocationID) {
-		message := "item must have a valid location ID"
-		errors["Invalid LocationID"] = message
+	if len(item.PhoneNo) <= 5 {
+		message := "Please supply a valid phone number"
+		errors["Invalid phone number"] = message
 	}
 
 	if len(errors) > 0 {
@@ -66,7 +84,7 @@ func (item *Item) Validate() map[string]string {
 
 //Create an item in the databsae
 func (item *Item) Create() error {
-	query := "INSERT INTO items (user_id, name, phone_no, instruction, location_id, ) VALUES ($1, $2, $3, $4, $5) returning id"
+	query := "INSERT INTO items (user_id, name, phone_no, instruction, city ) VALUES ($1, $2, $3, $4, $5) returning id"
 
 	stmt, err := db.Prepare(query)
 	defer stmt.Close()
@@ -76,7 +94,7 @@ func (item *Item) Create() error {
 		return err
 	}
 
-	err = stmt.QueryRow(item.UserID, item.Name, item.PhoneNo, item.Instruction, item.Location.LocationID).Scan(&item.ID)
+	err = stmt.QueryRow(item.UserID, item.Name, item.PhoneNo, item.Instruction, item.Location.City).Scan(&item.ID)
 
 	if err != nil {
 		log.Println(err)
@@ -87,7 +105,7 @@ func (item *Item) Create() error {
 
 //Get an item from the database
 func (item *Item) Get() error {
-	query := "SELECT name, user.first_name, email, user_id, location_id, instruction, created_at FROM items INNER JOIN ON items.user_id = users.id  where id = $1"
+	query := "SELECT name, display_name, email, items.user_id, items.city, instruction, phone_no, items.created_at as created_at, state, country FROM items INNER JOIN users ON items.user_id = users.id INNER JOIN locations ON locations.city = items.city where items.id = $1"
 
 	stmt, err := db.Prepare(query)
 	defer stmt.Close()
@@ -97,7 +115,7 @@ func (item *Item) Get() error {
 		return err
 	}
 
-	err = stmt.QueryRow(item.ID).Scan(&item.Name, &item.UserName, &item.UserEmail, item.UserID, &item.Location.LocationID, &item.Instruction, &item.CreatedAt)
+	err = stmt.QueryRow(item.ID).Scan(&item.Name, &item.DisplayName, &item.UserEmail, &item.UserID, &item.Location.City, &item.Instruction, &item.PhoneNo, &item.CreatedAt, &item.Location.State, &item.Location.Country)
 
 	if err != nil {
 		log.Println(err)
@@ -109,7 +127,7 @@ func (item *Item) Get() error {
 
 //Update an item in the database
 func (item *Item) Update() error {
-	query := "UPDATE items SET name = $1, phone_no = $2, closed = $3, instruction = $4 where id = $5"
+	query := "UPDATE items SET name = $1, phone_no = $2, closed = $3, instruction = $4, updated_at=$5 where id = $6"
 
 	stmt, err := db.Prepare(query)
 	defer stmt.Close()
@@ -119,7 +137,8 @@ func (item *Item) Update() error {
 		return err
 	}
 
-	_, err = stmt.Exec(item.Name, item.PhoneNo, item.Closed, item.Instruction, item.ID)
+	item.UpdatedAt = time.Now()
+	_, err = stmt.Exec(item.Name, item.PhoneNo, item.Closed, item.Instruction, item.UpdatedAt, item.ID)
 
 	if err != nil {
 		log.Println(err)
@@ -167,9 +186,10 @@ func (item *Item) ItemsInALocation() ([]Item, error) {
 
 	var itemArray []Item
 
+	defer rows.Close()
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.Name, &item.UserID, &item.UserName, &item.UserEmail, &item.PhoneNo, &item.Instruction, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.UserID, &item.DisplayName, &item.UserEmail, &item.PhoneNo, &item.Instruction, &item.CreatedAt); err != nil {
 			log.Println(err)
 			return nil, err
 		}
@@ -186,7 +206,7 @@ func (item *Item) ItemsInALocation() ([]Item, error) {
 
 //GetAllItems gets all items still open currently
 func (item *Item) GetAllItems() ([]Item, error) {
-	query := "SELECT id, name, user_id, user.display_name, email, phone_no, instruction FROM items INNER JOIN users ON items.user_id = user.id WHERE closed = false ORDER BY created_at DESC"
+	query := "SELECT id, name, user_id, user.display_name, email, phone_no, instruction, city, created_at FROM items INNER JOIN users ON items.user_id = user.id WHERE closed = false ORDER BY created_at DESC"
 
 	stmt, err := db.Prepare(query)
 	defer stmt.Close()
@@ -199,9 +219,11 @@ func (item *Item) GetAllItems() ([]Item, error) {
 	rows, err := stmt.Query()
 	var itemArray []Item
 
+	defer rows.Close()
+
 	for rows.Next() {
 		var item Item
-		if err := rows.Scan(&item.ID, &item.Name, &item.UserID, &item.PhoneNo, &item.Instruction, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.UserID, &item.PhoneNo, &item.Instruction, &item.Location.City, &item.CreatedAt); err != nil {
 			log.Println(err)
 			return nil, err
 		}

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/smtp"
 	"os"
+	"strings"
 )
 
 //Mail type
@@ -30,14 +31,14 @@ func (mail *Mail) parseTemplate(templateFileName string, data interface{}) error
 	t, err := template.ParseFiles(templateFileName)
 
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return err
 	}
 
 	buf := new(bytes.Buffer)
 
 	if err = t.Execute(buf, data); err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return err
 	}
 	mail.body = buf.String()
@@ -51,7 +52,7 @@ func (mail *Mail) buildConfirmationMessage(data interface{}) (string, error) {
 	message += fmt.Sprintf("From: %s\r\n", "")
 	message += fmt.Sprintf("Subject: %s\r\n", mail.subject)
 	message += "MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n"
-	err := mail.parseTemplate("confirmation_template.html", data)
+	err := mail.parseTemplate("/home/samuyi/projects/website/src/github.com/Samuyi/www/email/confirmation_template.html", data)
 
 	if err != nil {
 		log.Println(err)
@@ -67,7 +68,7 @@ func (mail *Mail) buildBidNotificationMessage(data interface{}) (string, error) 
 	message += fmt.Sprintf("From: %s\r\n", "")
 	message += fmt.Sprintf("Subject: %s\r\n", mail.subject)
 	message += "MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n"
-	err := mail.parseTemplate("bid-alert_template.html", data)
+	err := mail.parseTemplate("/home/samuyi/projects/website/src/github.com/Samuyi/www/email/bid-alert_template.html", data)
 
 	if err != nil {
 		log.Println(err)
@@ -85,7 +86,7 @@ func (mail *Mail) buildPasswordChangeMessage(data interface{}) (string, error) {
 	message += fmt.Sprintf("From: %s\r\n", "")
 	message += fmt.Sprintf("Subject: %s\r\n", mail.subject)
 	message += "MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n"
-	err := mail.parseTemplate("passwordChange_template.html", data)
+	err := mail.parseTemplate("/home/samuyi/projects/website/src/github.com/Samuyi/www/email/password-change_template.html", data)
 
 	if err != nil {
 		log.Println(err)
@@ -98,10 +99,10 @@ func (mail *Mail) buildPasswordChangeMessage(data interface{}) (string, error) {
 
 //SendConfirmationMail send email to new users
 func (mail *Mail) SendConfirmationMail(name, url string) error {
-	mail.subject = os.Getenv("CONFIRMATION-MAIL-SUBJECT")
-
+	mail.subject = "Welcome to our network"
+	capitalizedName := strings.Title(name)
 	data := map[string]string{
-		"name": name,
+		"name": capitalizedName,
 		"url":  url,
 	}
 	message, err := mail.buildConfirmationMessage(data)
@@ -113,7 +114,7 @@ func (mail *Mail) SendConfirmationMail(name, url string) error {
 
 	smtpServer := smtpServer{host: "smtp.gmail.com", port: "465"}
 
-	auth := smtp.PlainAuth("", os.Getenv("EMAIL"), os.Getenv("EMAIL-PASSWORD"), smtpServer.host)
+	auth := smtp.PlainAuth("", os.Getenv("email"), os.Getenv("email_password"), smtpServer.host)
 
 	// Gmail will reject connection if it's not secure
 	// TLS config
@@ -142,7 +143,7 @@ func (mail *Mail) SendConfirmationMail(name, url string) error {
 	}
 
 	// step 2: add all from and to
-	if err = client.Mail(os.Getenv("EMAIL")); err != nil {
+	if err = client.Mail(os.Getenv("email")); err != nil {
 		log.Println(err)
 		return err
 	}
@@ -192,9 +193,9 @@ func (mail *Mail) EmailPassword(password, url string) error {
 		return err
 	}
 
-	smtpServer := smtpServer{host: "smtp.gmail.com", port: "456"}
+	smtpServer := smtpServer{host: "smtp.gmail.com", port: "465"}
 
-	auth := smtp.PlainAuth("", os.Getenv("EMAIL"), os.Getenv("EMAIL-PASSWORD"), smtpServer.host)
+	auth := smtp.PlainAuth("", os.Getenv("email"), os.Getenv("email_password"), smtpServer.host)
 
 	// Gmail will reject connection if it's not secure
 	// TLS config
@@ -223,7 +224,7 @@ func (mail *Mail) EmailPassword(password, url string) error {
 	}
 
 	// step 2: add all from and to
-	if err = client.Mail(os.Getenv("EMAIL")); err != nil {
+	if err = client.Mail(os.Getenv("email")); err != nil {
 		log.Println(err)
 		return err
 	}
@@ -257,8 +258,9 @@ func (mail *Mail) EmailPassword(password, url string) error {
 
 }
 
+//SendBidAlertMail sends an email to the owner of an item that a bid has been placed on his item
 func (mail *Mail) SendBidAlertMail(name, url string) error {
-	mail.subject = os.Getenv("BID-ALERT-SUBJECT")
+	mail.subject = "Bid placed on your item"
 
 	data := map[string]string{
 		"name": name,
@@ -273,7 +275,7 @@ func (mail *Mail) SendBidAlertMail(name, url string) error {
 
 	smtpServer := smtpServer{host: "smtp.gmail.com", port: "465"}
 
-	auth := smtp.PlainAuth("", os.Getenv("EMAIL"), os.Getenv("EMAIL-PASSWORD"), smtpServer.host)
+	auth := smtp.PlainAuth("", os.Getenv("email"), os.Getenv("email_password"), smtpServer.host)
 
 	// Gmail will reject connection if it's not secure
 	// TLS config
@@ -302,7 +304,7 @@ func (mail *Mail) SendBidAlertMail(name, url string) error {
 	}
 
 	// step 2: add all from and to
-	if err = client.Mail(os.Getenv("EMAIL")); err != nil {
+	if err = client.Mail(os.Getenv("email")); err != nil {
 		log.Println(err)
 		return err
 	}

@@ -27,7 +27,7 @@ func SetUserForConfirmation(id string) (string, error) {
 	_, err := client.Set(key, id, 0).Result()
 
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return "", nil
 	}
 
@@ -40,12 +40,19 @@ func GetUserForConfirmation(key string) (string, error) {
 	id, err := client.Get(key).Result()
 
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return "", err
 	}
 
 	if id == "" {
 		err = errors.New("Please supply a valid key")
+		return "", err
+	}
+
+	_, err = client.Del(key).Result()
+
+	if err != nil {
+		log.Println(err)
 		return "", err
 	}
 

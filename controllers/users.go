@@ -16,16 +16,17 @@ import (
 	"github.com/Samuyi/www/utilities"
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/go-redis/redis"
+	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 )
 
 //MyCustomClaims is a type for the jwt claims
 type MyCustomClaims struct {
-	sessionID string
+	SessionID string `json:"sessionID"`
 	jwt.StandardClaims
 }
 
-var store = sessions.NewCookieStore([]byte(os.Getenv("SIGNING_KEY")))
+var store = sessions.NewCookieStore([]byte(os.Getenv("signing_key")))
 
 var client *redis.Client
 
@@ -47,11 +48,11 @@ func createToken() (map[string]string, error) {
 		letters[i], letters[j] = letters[j], letters[i]
 	})
 
-	sessionID := strings.Join(letters[2:12], "")
+	SessionID := strings.Join(letters[2:12], "")
 	exp := time.Now().Unix() + (86400 * 3)
 
 	claims := MyCustomClaims{
-		sessionID,
+		SessionID,
 		jwt.StandardClaims{
 			ExpiresAt: exp,
 		},
@@ -66,7 +67,7 @@ func createToken() (map[string]string, error) {
 	}
 
 	session := map[string]string{
-		"sessionID": sessionID,
+		"sessionID": SessionID,
 		"token":     ss,
 	}
 
@@ -79,8 +80,7 @@ func setSession(sessionID string, sessionValues map[interface{}]interface{}) err
 
 	for k, v := range sessionValues {
 		key := k.(string)
-		value := v.(string)
-		session[key] = value
+		session[key] = v
 	}
 
 	_, err := client.HMSet(sessionID, session).Result()
@@ -98,17 +98,12 @@ func setSession(sessionID string, sessionValues map[interface{}]interface{}) err
 	return nil
 }
 
-//GetSessiom gets the values of a session
-func getSession(sessionID string) (users.User, error) {
-	var user users.User
-
-	session, err := client.HGetAll(sessionID).Result()
-
+func getUserFromSession(sessionID string) (users.User, error) {
+	var user = users.User{}
+	session, err := utilities.GetSession(sessionID)
 	if err != nil {
-		log.Println(err)
 		return user, err
 	}
-
 	if session == nil {
 		return user, fmt.Errorf("Session has expired")
 	}
@@ -121,6 +116,7 @@ func getSession(sessionID string) (users.User, error) {
 	user.Avatar = session["Avatar"]
 
 	return user, nil
+
 }
 
 //RegisterUser controller to create a new user
@@ -173,6 +169,7 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 	id, err := utilities.SetUserForConfirmation(user.ID)
 
 	if err != nil {
+		_ = user.Delete()
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
 		w.Header().Set("Content-type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -183,8 +180,9 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 
 	var mail = &email.Mail{To: user.Email}
 
-	err = mail.SendConfirmationMail(user.DisplayName, baseURL+"/?key="+id)
+	go mail.SendConfirmationMail(user.FirstName, baseURL+"/?key="+id)
 	if err != nil {
+		_ = user.Delete()
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
 		w.Header().Set("Content-type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -220,8 +218,9 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 	session.Values["LastName"] = user.LastName
 	session.Values["DisplayName"] = user.DisplayName
 	session.Values["Active"] = user.Active
-	session.Values["Avartar"] = user.Avatar
+	session.Values["Avatar"] = user.Avatar
 	session.Values["userID"] = user.ID
+	session.Values["email"] = user.Email
 
 	err = session.Save(r, w)
 
@@ -259,7 +258,7 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 
 //Login logs a user into the application
 func Login(w http.ResponseWriter, r *http.Request) {
-	var user users.User
+	var user = &users.User{}
 
 	if r.Body == nil {
 		msg := map[string]string{"error": "Please supply email and password"}
@@ -283,9 +282,18 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	password := user.Password
-	err = user.Get()
+	err = user.GetID()
 
 	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			msg := map[string]string{"error": "Sorry email is invalid "}
+			w.Header().Set("Content-type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(msg)
+
+			return
+		}
+
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
 		w.Header().Set("Content-type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -336,7 +344,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	session.Values["LastName"] = user.LastName
 	session.Values["DisplayName"] = user.DisplayName
 	session.Values["Active"] = user.Active
-	session.Values["Avartar"] = user.Avatar
+	session.Values["Avatar"] = user.Avatar
 	session.Values["userID"] = user.ID
 
 	err = session.Save(r, w)
@@ -369,6 +377,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+
+	return
 }
 
 //ConfirmUser confirms a user's email address
@@ -476,7 +486,7 @@ func ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var user *users.User
+	var user = &users.User{}
 
 	err := json.NewDecoder(r.Body).Decode(user)
 
@@ -493,16 +503,16 @@ func ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	err = user.GetID()
 
 	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			msg := map[string]string{"error": "Sorry email is invalid "}
+			w.Header().Set("Content-type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(msg)
+
+			return
+		}
+
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
-		w.Header().Set("Content-type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(msg)
-
-		return
-	}
-
-	if user.ID == "" {
-		msg := map[string]string{"error": "Sorry this email doesn't exist."}
 		w.Header().Set("Content-type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(msg)
@@ -553,13 +563,15 @@ func ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+
+	return
 }
 
 //UpdateUser updates a user's data in the database
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
 
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -617,7 +629,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
 
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -662,9 +674,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 //GetAllUsers fetches all users from the application
 func GetAllUsers(w http.ResponseWriter, r *http.Request) {
-	var user = &users.User{}
-
-	users, err := user.GetAll()
+	resp, err := users.GetAll()
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -677,27 +687,29 @@ func GetAllUsers(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(users)
+	json.NewEncoder(w).Encode(resp)
 
 	return
 
 }
 
+//GetUser gets a user
 func GetUser(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
+	params := mux.Vars(r)
+	username := params["username"]
 
-	if id != "" {
-		msg := map[string]string{"error": "Sorry there was an internal server error"}
+	if username == "" {
+		msg := map[string]string{"error": "please supply a valid id"}
 		w.Header().Set("Content-type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(msg)
 
 		return
 	}
 
-	var user = &users.User{ID: id}
+	var user = &users.User{DisplayName: username}
 
-	err := user.Get()
+	err := user.GetUserByName()
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -707,13 +719,14 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	user.Password = ""
 
 	w.Header().Set("Content-type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(user)
 
 	return
-
 }
 
 //LogOut logs a user out of the application

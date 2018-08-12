@@ -6,12 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
-
 	"github.com/Samuyi/www/email"
 	"github.com/Samuyi/www/models/comments"
 	"github.com/Samuyi/www/models/items"
-	"github.com/Samuyi/www/models/locations"
 	"github.com/gorilla/websocket"
 )
 
@@ -25,7 +22,7 @@ var upgrader = websocket.Upgrader{
 //CreateItem creates an item
 func CreateItem(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -54,8 +51,10 @@ func CreateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var item *items.Item
+	var item = &items.Item{}
 	err = json.NewDecoder(r.Body).Decode(&item)
+
+	log.Println(item.Location)
 
 	if err != nil {
 		log.Println(err)
@@ -66,7 +65,7 @@ func CreateItem(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-
+	item.UserID = user.ID
 	errors := item.Validate()
 
 	if len(errors) > 0 {
@@ -80,6 +79,14 @@ func CreateItem(w http.ResponseWriter, r *http.Request) {
 	err = item.Create()
 
 	if err != nil {
+		if err.Error() == "pq: insert or update on table \"items\" violates foreign key constraint \"items_city_fkey\"" {
+			msg := map[string]string{"error": "Please supply a valid city"}
+			w.Header().Set("Content-type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(msg)
+
+			return
+		}
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
 		w.Header().Set("Content-type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -102,8 +109,7 @@ func CreateItem(w http.ResponseWriter, r *http.Request) {
 
 //GetItem gets an item
 func GetItem(w http.ResponseWriter, r *http.Request) {
-	params := mux.Vars(r)
-	id := params["id"]
+	id := r.URL.Query().Get("id")
 
 	if id == "" {
 		msg := map[string]string{"error": "id required"}
@@ -114,7 +120,8 @@ func GetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var item = &items.Item{ID: id}
+	var item = &items.Item{}
+	item.ID = id
 
 	err := item.Get()
 
@@ -127,26 +134,19 @@ func GetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var location = &locations.Location{LocationID: item.Location.LocationID}
-
-	err = location.Get()
-
-	if err != nil {
-		msg := map[string]string{"error": "Please try again later"}
-		w.Header().Set("Content-type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(msg)
-
-		return
-	}
-
-	item.Location = *location
-
 	var comment comments.Comment
 
 	comment.ItemID = id
 
-	itemComments, _ := comment.GetItemComments()
+	itemComments, err := comment.GetItemComments()
+
+	if err != nil {
+		w.Header().Set("Content-type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(item)
+
+		return
+	}
 
 	item.Comments = itemComments
 
@@ -250,7 +250,7 @@ func GetAllItems(w http.ResponseWriter, r *http.Request) {
 //BidItem bids for an item not yet closed
 func BidItem(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -312,7 +312,7 @@ func BidItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var msg map[string]interface{}
+	var msg = make(map[string]interface{})
 
 	err = json.NewDecoder(r.Body).Decode(&msg)
 
@@ -325,7 +325,8 @@ func BidItem(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	_, err = client.HSet(id, user.ID, msg["message"]).Result()
+	key := id + ":bids"
+	_, err = client.HSet(key, user.DisplayName, msg["message"]).Result()
 
 	if err != nil {
 		log.Println(err)
@@ -339,18 +340,15 @@ func BidItem(w http.ResponseWriter, r *http.Request) {
 
 	var mail = &email.Mail{To: item.UserEmail}
 
-	err = mail.SendBidAlertMail(item.UserName, baseURL+"/?id="+id)
+	go mail.SendBidAlertMail(item.DisplayName, baseURL+"/?id="+id)
 
-	if err != nil {
-
-		w.Header().Set("Content-type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		return
+	res := map[string]string{
+		"message": "success",
 	}
 
 	w.Header().Set("Content-type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(res)
 
 	return
 }
@@ -358,7 +356,7 @@ func BidItem(w http.ResponseWriter, r *http.Request) {
 //GetBidsOnItem gets all bids for an item
 func GetBidsOnItem(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -379,6 +377,8 @@ func GetBidsOnItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := r.URL.Query().Get("id")
+
+	log.Println("i'm here")
 
 	if id == "" {
 		msg := map[string]string{"error": "id required"}
@@ -411,7 +411,8 @@ func GetBidsOnItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := client.HGetAll(id).Result()
+	key := id + ":bids"
+	resp, err := client.HGetAll(key).Result()
 
 	if err != nil {
 		log.Println(err)
@@ -433,7 +434,7 @@ func GetBidsOnItem(w http.ResponseWriter, r *http.Request) {
 //CloseItem closes an item from people biding
 func CloseItem(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -508,7 +509,7 @@ func CloseItem(w http.ResponseWriter, r *http.Request) {
 //UpdateItem updates an item
 func UpdateItem(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -553,7 +554,15 @@ func UpdateItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user.ID != item.UserID {
-		msg := map[string]string{"error": "Sorry you're not authorized to view this page"}
+		msg := map[string]string{"error": "Sorry you're not authorized to make a change here"}
+		w.Header().Set("Content-type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(msg)
+
+		return
+	}
+	if item.Closed {
+		msg := map[string]string{"error": "Sorry item is closed already"}
 		w.Header().Set("Content-type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(msg)

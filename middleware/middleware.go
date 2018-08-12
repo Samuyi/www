@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Samuyi/www/utilities"
 	jwt "github.com/dgrijalva/jwt-go"
 )
 
@@ -20,7 +21,6 @@ func Method(methods ...string) Middleware {
 
 		// Define the http.HandlerFunc
 		return func(w http.ResponseWriter, r *http.Request) {
-
 			for _, m := range methods {
 				if r.Method == m {
 					f(w, r)
@@ -29,7 +29,7 @@ func Method(methods ...string) Middleware {
 				}
 			}
 
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 			return
 		}
 	}
@@ -94,8 +94,18 @@ func Auth() Middleware {
 
 			sessionID := claims["sessionID"].(string)
 
-			r.Header.Set("sessionID", sessionID)
+			_, err = utilities.GetSession(sessionID)
 
+			if err != nil {
+				msg := map[string]string{"message": "Sorry session has expired"}
+				w.Header().Set("Content-type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(msg)
+
+				return
+			}
+
+			r.Header.Set("sessionID", sessionID)
 			f(w, r)
 
 		}
@@ -108,7 +118,7 @@ func WithCors() Middleware {
 	return func(fn http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
-			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, PATCH, DELETE")
 			w.Header().Set("Access-Control-Allow-Headers",
 				"Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
 

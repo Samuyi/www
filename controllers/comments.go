@@ -13,7 +13,7 @@ import (
 //CreateComment creates a comment
 func CreateComment(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -80,7 +80,7 @@ func CreateComment(w http.ResponseWriter, r *http.Request) {
 //CreateReply creates a reply
 func CreateReply(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -205,6 +205,42 @@ func GetComment(w http.ResponseWriter, r *http.Request) {
 
 }
 
+//GetReplies gets all replies for a comment
+func GetReplies(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	commentID := params["comment_id"]
+
+	if commentID == "" {
+		msg := map[string]string{"error": "comment id required"}
+		w.Header().Set("Content-type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(msg)
+
+		return
+	}
+	var comment comments.Comment
+
+	comment.ID = commentID
+
+	err := comment.GetReplies()
+
+	if err != nil {
+		msg := map[string]string{"error": "Sorry there was an internal server error"}
+		w.Header().Set("Content-type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(msg)
+
+		return
+	}
+
+	w.Header().Set("Content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(comment.Replies)
+
+	return
+
+}
+
 //GetItemComments gets all comments for an item
 func GetItemComments(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
@@ -244,7 +280,7 @@ func GetItemComments(w http.ResponseWriter, r *http.Request) {
 //UpdateComment updates a comment
 func UpdateComment(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -331,7 +367,7 @@ func UpdateComment(w http.ResponseWriter, r *http.Request) {
 //UpdateReply updates a reply
 func UpdateReply(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -416,7 +452,7 @@ func UpdateReply(w http.ResponseWriter, r *http.Request) {
 //DeleteComment deletes a comment
 func DeleteComment(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -461,7 +497,7 @@ func DeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user.DisplayName != comment.Username {
-		msg := map[string]string{"error": "Sorry you're not authorized to view this page"}
+		msg := map[string]string{"error": "Sorry you're not authorized to carry out this activity"}
 		w.Header().Set("Content-type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(msg)
@@ -491,7 +527,7 @@ func DeleteComment(w http.ResponseWriter, r *http.Request) {
 //DeleteReply deletes a reply
 func DeleteReply(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -522,7 +558,19 @@ func DeleteReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var reply = &comments.Reply{ID: id}
+	params := mux.Vars(r)
+	commentID := params["comment_id"]
+
+	if commentID == "" {
+		msg := map[string]string{"error": "comment id required"}
+		w.Header().Set("Content-type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(msg)
+
+		return
+	}
+
+	var reply = &comments.Reply{ID: id, CommentID: commentID}
 
 	err = reply.Get()
 

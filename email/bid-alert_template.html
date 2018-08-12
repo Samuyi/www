@@ -115,7 +115,7 @@
             <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;" >
                 <tr>
                     <td bgcolor="#ffffff" align="center" valign="top" style="padding: 40px 20px 20px 20px; border-radius: 4px 4px 0px 0px; color: #111111; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 48px; font-weight: 400; letter-spacing: 4px; line-height: 48px;">
-                      <h1 style="font-size: 48px; font-weight: 400; margin: 0;">Hello {{ .name }}. Some one has bid for your item.</h1>
+                      <h3 style="font-size: 20px; font-weight: 100; margin: 0;">Hello {{ .name }}. Some one has placed a bid on your item.</h3>
                     </td>
                 </tr>
             </table>
@@ -145,9 +145,16 @@
               <!-- COPY HEADING -->
               <tr>
                 <td bgcolor="#ffffff" align="left" style="padding: 0px 30px 0px 30px; color: #111111; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 18px; font-weight: 400; line-height: 25px;" >
-                  <a href={{ .url }} style="font-size: 24px; font-weight: 400; margin: 0;">Click here to view the bid</a>
+                  <p><a href={{ .url }} style="font-size: 14px; font-weight: 100; margin: 0;">Click here to view the bid</a></p>
+                  <p>or copy and paste the link below in a browser</p>
                 </td>
               </tr>
+              <tr>
+                <td bgcolor="#ffffff" align="left" style="padding: 0px 30px 0px 30px; color: #111111; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 18px; font-weight: 400; line-height: 25px;" >
+                    <p>{{ .url }}</p>
+                </td>
+              </tr>
+              
               <!-- COPY -->
               <!-- COPY HEADING -->
               <!-- COPY -->
@@ -184,42 +191,15 @@
         </td>
     </tr>
     <!-- FOOTER -->
-    <tr>
-        <td bgcolor="#f4f4f4" align="center" style="padding: 0px 10px 0px 10px;">
-            <!--[if (gte mso 9)|(IE)]>
-            <table align="center" border="0" cellspacing="0" cellpadding="0" width="600">
-            <tr>
-            <td align="center" valign="top" width="600">
-            <![endif]-->
-            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;" >
-              <!-- NAVIGATION -->
-              <tr>
-                <td bgcolor="#f4f4f4" align="left" style="padding: 30px 30px 30px 30px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 400; line-height: 18px;" >
-                  <p style="margin: 0;">
-                    <a href="http://litmus.com" target="_blank" style="color: #111111; font-weight: 700;">Dashboard</a> -
-                    <a href="http://litmus.com" target="_blank" style="color: #111111; font-weight: 700;">Billing</a> -
-                    <a href="http://litmus.com" target="_blank" style="color: #111111; font-weight: 700;">Help</a>
-                  </p>
-                </td>
-              </tr>
+
               <!-- PERMISSION REMINDER -->
-              <tr>
-                <td bgcolor="#f4f4f4" align="left" style="padding: 0px 30px 30px 30px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 400; line-height: 18px;" >
-                  <p style="margin: 0;">You received this email because we thought you'd like some updates on Ceej. If it looks weird, <a href="http://litmus.com" target="_blank" style="color: #111111; font-weight: 700;">view it in your browser</a>.</p>
-                </td>
-              </tr>
               <!-- UNSUBSCRIBE -->
               <tr>
                 <td bgcolor="#f4f4f4" align="left" style="padding: 0px 30px 30px 30px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 400; line-height: 18px;" >
-                  <p style="margin: 0;">If these emails get annoying, please feel free to <a href="http://litmus.com" target="_blank" style="color: #111111; font-weight: 700;">unsubscribe</a>.</p>
+                  <p style="margin: 0;">If these emails get annoying, please feel free to <a href="#" target="_blank" style="color: #111111; font-weight: 700;">unsubscribe</a>.</p>
                 </td>
               </tr>
               <!-- ADDRESS -->
-              <tr>
-                <td bgcolor="#f4f4f4" align="left" style="padding: 0px 30px 30px 30px; color: #666666; font-family: 'Lato', Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 400; line-height: 18px;" >
-                  <p style="margin: 0;">Ceej - 1234 Main Street - Anywhere, MA - 56789</p>
-                </td>
-              </tr>
             </table>
             <!--[if (gte mso 9)|(IE)]>
             </td>

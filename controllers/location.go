@@ -11,7 +11,7 @@ import (
 //CreateLocation creates a location
 func CreateLocation(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -31,7 +31,7 @@ func CreateLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var location locations.Location
+	var location = &locations.Location{}
 
 	if r.Body == nil {
 		msg := map[string]string{"error": "Please supply a name, state and country code of a location"}
@@ -43,7 +43,7 @@ func CreateLocation(w http.ResponseWriter, r *http.Request) {
 	err = json.NewDecoder(r.Body).Decode(&location)
 
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		msg := map[string]string{"error": "Please supply a valid name, email and password"}
 		w.Header().Set("Content-type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -51,6 +51,7 @@ func CreateLocation(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	location.UserID = user.ID
 
 	errors := location.Validate()
 
@@ -117,9 +118,11 @@ func GetLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var location = &locations.Location{LocationID: id}
+	var location = &locations.Location{}
 
-	err := location.Create()
+	location.LocationID = id
+
+	err := location.Get()
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -141,7 +144,7 @@ func GetLocation(w http.ResponseWriter, r *http.Request) {
 //UpdateLocation updates a location
 func UpdateLocation(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("sessionID")
-	user, err := getSession(sessionID)
+	user, err := getUserFromSession(sessionID)
 
 	if err != nil {
 		msg := map[string]string{"error": "Sorry there was an internal server error"}
@@ -183,12 +186,12 @@ func UpdateLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var changes map[string]string
+	var changes = make(map[string]string)
 
-	err = json.NewDecoder(r.Body).Decode(changes)
+	err = json.NewDecoder(r.Body).Decode(&changes)
 
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		msg := map[string]string{"error": "Sorry only city, country or state names can be updated"}
 		w.Header().Set("Content-type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)

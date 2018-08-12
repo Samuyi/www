@@ -2,7 +2,6 @@ package comments
 
 import (
 	"log"
-	"strconv"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -21,33 +20,34 @@ func init() {
 
 //Comment is the data structure of a comment on an item
 type Comment struct {
-	ID         string
-	ItemID     string
-	Username   string
-	Comment    string
-	ReplyCount int64
-	Replies    []Reply
-	CreatedAt  float64
-	UpdatedAt  int64
+	ID         string  `json:"id"`
+	ItemID     string  `json:"item_id"`
+	Username   string  `json:"display_name"`
+	Comment    string  `json:"comment"`
+	ReplyCount int64   `json:"reply_count"`
+	Replies    []Reply `json:"replies"`
+	CreatedAt  string  `json:"created_at"`
+	UpdatedAt  string  `json:"updated_at"`
 }
 
 //Reply a comment by a user
 type Reply struct {
-	ID        string
-	Username  string
-	CommentID string
-	Comment   string
-	CreatedAt float64
+	ID        string `json:"id"`
+	Username  string `json:"user_name"`
+	CommentID string `json:comment_id"`
+	Comment   string `json:"comment"`
+	CreatedAt string `json:"created_at"`
 }
 
 //Create a comment for an item
 func (comment *Comment) Create() error {
+	date := time.Now()
 	comment.ID = uuid.Must(uuid.NewV4()).String()
-	comment.CreatedAt = float64(time.Now().Unix())
-	comment.UpdatedAt = 0
+	comment.CreatedAt = date.String()
+	comment.UpdatedAt = ""
 
 	var z redis.Z
-	z.Score = comment.CreatedAt
+	z.Score = float64(date.Unix())
 	z.Member = comment.ID
 
 	pipeline := client.Pipeline()
@@ -56,6 +56,7 @@ func (comment *Comment) Create() error {
 
 	fields := map[string]interface{}{
 		"username":   comment.Username,
+		"item_id":    comment.ItemID,
 		"comment":    comment.Comment,
 		"created_at": comment.CreatedAt,
 		"updated_at": comment.UpdatedAt,
@@ -75,8 +76,9 @@ func (comment *Comment) Create() error {
 
 //Create a reply to a comment by a user
 func (reply *Reply) Create() error {
+	date := time.Now()
 	reply.ID = uuid.Must(uuid.NewV4()).String()
-	reply.CreatedAt = float64(time.Now().Unix())
+	reply.CreatedAt = date.String()
 
 	fields := map[string]interface{}{
 		"username":   reply.Username,
@@ -84,7 +86,7 @@ func (reply *Reply) Create() error {
 		"created_at": reply.CreatedAt,
 	}
 
-	z := redis.Z{Score: reply.CreatedAt, Member: reply.ID}
+	z := redis.Z{Score: float64(date.Unix()), Member: reply.ID}
 
 	pipeline := client.Pipeline()
 	pipeline.ZAdd("replies:"+reply.CommentID, z)
@@ -110,7 +112,7 @@ func (reply *Reply) Get() error {
 	}
 
 	reply.Comment = resp["comment"]
-	reply.CreatedAt, _ = strconv.ParseFloat(resp["created_at"], 64)
+	reply.CreatedAt, _ = resp["created_at"]
 	reply.Username = resp["username"]
 
 	return nil
@@ -131,9 +133,15 @@ func (comment *Comment) Get() error {
 		return err
 	}
 
+	var reply = []Reply{}
+
 	comment.Username = resp["username"]
 	comment.Comment = resp["comment"]
+	comment.ItemID = resp["item_id"]
 	comment.ReplyCount = replyCount
+	comment.Replies = reply
+	comment.CreatedAt = resp["created_at"]
+	comment.UpdatedAt = resp["updates_at"]
 
 	return nil
 
@@ -163,7 +171,7 @@ func (comment *Comment) GetReplies() error {
 		reply.Username = res["username"]
 		reply.Comment = res["comment"]
 		reply.ID = id
-		reply.CreatedAt = v.Score
+		reply.CreatedAt = res["created_at"]
 
 		comment.Replies = append(comment.Replies, reply)
 
@@ -225,7 +233,7 @@ func (reply *Reply) Delete() error {
 
 //Update a comment
 func (comment *Comment) Update() error {
-	updatedAt := time.Now().Unix()
+	updatedAt := time.Now().String()
 	fields := map[string]interface{}{
 		"comment":    comment.Comment,
 		"updated_at": updatedAt,
@@ -241,7 +249,7 @@ func (comment *Comment) Update() error {
 
 //Update a reply to a comment
 func (reply *Reply) Update() error {
-	updatedAt := time.Now().Unix()
+	updatedAt := time.Now().String()
 
 	fields := map[string]interface{}{
 		"comment":    reply.Comment,
@@ -277,7 +285,6 @@ func (comment *Comment) GetItemComments() ([]Comment, error) {
 		var comment Comment
 		id := v.Member.(string)
 		comment.ID = id
-		comment.CreatedAt = v.Score
 		err := comment.Get()
 
 		if err != nil {

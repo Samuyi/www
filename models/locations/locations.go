@@ -1,24 +1,27 @@
 package locations
 
 import (
+	"bytes"
 	"database/sql"
+	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	validator "github.com/asaskevich/govalidator"
+	_ "github.com/lib/pq" // postgres driver
 )
 
 //Location where an item is based
 type Location struct {
-	LocationID  string
-	City        string
-	UserID      string
-	State       string
-	Country     string
-	CountryCode string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	LocationID  string    `json:"location_id"`
+	City        string    `json:"city"`
+	UserID      string    `json:"user_id,omitempty"`
+	State       string    `json:"state"`
+	Country     string    `json:"country"`
+	CountryCode string    `json:"country_code"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 var countries = map[string]string{
@@ -267,19 +270,35 @@ var countries = map[string]string{
 
 var db *sql.DB
 
+const (
+	host     = "localhost"
+	port     = 5432
+	user     = "help"
+	password = "help"
+	dbname   = "help.ng"
+)
+
 func init() {
 	var err error
 
-	db, err = sql.Open("postgres", "use=help.ng password=this is a password for help.ng sslmode=disable")
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+"password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+	db, err = sql.Open("postgres", psqlInfo)
 
 	if err != nil {
 		log.Println(err)
 	}
+	err = db.Ping()
+
+	if err != nil {
+		log.Println(err)
+	}
+
+	log.Println("connected to database")
 }
 
 //Validate location struct
 func (location *Location) Validate() map[string]string {
-	var errors map[string]string
+	var errors = make(map[string]string)
 
 	if len(location.City) <= 2 {
 		message := "Please supply a valid city"
@@ -310,7 +329,7 @@ func (location *Location) Validate() map[string]string {
 
 //Create a location
 func (location *Location) Create() error {
-	query := "INSERT INTO locations (name, user_id, state, country) VALUES ($1, $2, $3, $4) returning location_id"
+	query := "INSERT INTO locations (city, user_id, state, country) VALUES ($1, $2, $3, $4) returning location_id"
 
 	stmt, err := db.Prepare(query)
 
@@ -337,7 +356,7 @@ func (location *Location) Create() error {
 
 //Get a location
 func (location *Location) Get() error {
-	query := "SELECT name, state, country FROM locations where location_id = $1"
+	query := "SELECT city, state, country, created_at FROM locations where location_id = $1"
 
 	stmt, err := db.Prepare(query)
 
@@ -348,7 +367,7 @@ func (location *Location) Get() error {
 		return err
 	}
 
-	err = stmt.QueryRow(location.LocationID).Scan(&location.City, &location.State, &location.Country)
+	err = stmt.QueryRow(location.LocationID).Scan(&location.City, &location.State, &location.Country, &location.CreatedAt)
 
 	if err != nil {
 		log.Println(err)
@@ -361,20 +380,20 @@ func (location *Location) Get() error {
 
 //Update a location
 func (location *Location) Update(changes map[string]string) error {
-	query := "UPDATE locations SET"
-
+	var query bytes.Buffer
+	query.Write([]byte("UPDATE locations SET"))
 	for k, v := range changes {
-		query += " "
-		query += k
-		query += "="
-		query += " "
-		query += v
-		query += ","
+		query.Write([]byte(" "))
+		query.Write([]byte(k))
+		query.Write([]byte(" ="))
+		query.Write([]byte(" "))
+		query.Write([]byte("'" + v + "'"))
+		query.Write([]byte(", "))
 	}
 
-	query += "WHERE location_id = $1"
+	query.Write([]byte(" updated_at = $1 WHERE location_id = $2"))
 
-	stmt, err := db.Prepare(query)
+	stmt, err := db.Prepare(query.String())
 
 	defer stmt.Close()
 
@@ -382,8 +401,9 @@ func (location *Location) Update(changes map[string]string) error {
 		log.Println(err)
 		return err
 	}
+	location.UpdatedAt = time.Now()
 
-	_, err = stmt.Exec(location.LocationID)
+	_, err = stmt.Exec(location.UpdatedAt, location.LocationID)
 
 	if err != nil {
 		log.Println(err)
@@ -417,7 +437,7 @@ func (location *Location) Delete() error {
 
 //GetAll locations
 func (location *Location) GetAll() ([]Location, error) {
-	query := "SELECT location_id, name, state, country FROM locations"
+	query := "SELECT location_id, city, state, country FROM locations"
 
 	stmt, err := db.Prepare(query)
 
@@ -437,6 +457,7 @@ func (location *Location) GetAll() ([]Location, error) {
 
 	var locations []Location
 
+	defer rows.Close()
 	for rows.Next() {
 		var location Location
 
